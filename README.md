@@ -166,29 +166,16 @@ compose-stacks/
 
 ### v1.0.3
 - feat: nginx connection limits + slow-loris protection — closes #3
-  (`limit_conn perip 20`, `client_body_timeout 10s`, `send_timeout 10s`)
+  (`limit_conn perip 20`, body/header/send timeouts 10s)
 - feat: SSL certificate expiry Prometheus alerts — closes #4
-  (`SSLCertExpiringSoon` < 14 days, `SSLCertExpired` — fires immediately)
+  (`SSLCertExpiringSoon` < 14 days warning, `SSLCertExpired` critical)
 
 ### v1.0.2
-- feat: resource limits (memory + CPU) added to all services in all stacks — closes #1
-  - nginx: 128m / 0.25 CPU
-  - app: 512m / 1.0 CPU
-  - postgres: 512m / 0.5 CPU
-  - redis: 256m / 0.25 CPU
-  - prometheus: 512m / 0.5 CPU
-  - grafana: 256m / 0.5 CPU
-  - loki: 512m / 0.5 CPU
-  - (full list in each stack's docker-compose.yml)
-
----
-
-## Changelog
+- feat: `deploy.resources` (memory + CPU limits + reservations) on all services — closes #1
 
 ### v1.0.1
-- fix: CI validation — `.env` files now created from `.env.example` before `docker compose config` runs
-- fix: `env_file` set to `required: false` in `full-stack` and `web-basic` — prevents failure when `.env` is absent
-- ci: cleanup step added to remove generated `.env` files after validation
+- fix: CI — `.env` files created from `.env.example` before `docker compose config`
+- fix: `env_file: required: false` in `full-stack` and `web-basic`
 
 ---
 
