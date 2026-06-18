@@ -1,7 +1,7 @@
 # 🐳 Compose Stacks
 
 [![Validate Stacks](https://github.com/quaresma870/compose-stacks/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/quaresma870/compose-stacks/actions/workflows/validate.yml)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20Compose-v2.20%2B-2496ED?logo=docker&logoColor=white)
 ![Node.js](https://img.shields.io/badge/GitHub%20Actions-Node.js%2024-brightgreen?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -159,6 +159,15 @@ compose-stacks/
 - Docker Engine 24+
 - Docker Compose plugin v2.20+
 - Linux (Ubuntu 22.04+ recommended)
+
+---
+
+## Changelog
+
+### v1.0.1
+- fix: CI validation — `.env` files now created from `.env.example` before `docker compose config` runs
+- fix: `env_file` set to `required: false` in `full-stack` and `web-basic` — prevents failure when `.env` is absent
+- ci: cleanup step added to remove generated `.env` files after validation
 
 ---
 
