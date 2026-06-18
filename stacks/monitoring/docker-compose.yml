@@ -20,6 +20,7 @@ services:
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./config/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./config/ssl_alerts.yml:/etc/prometheus/ssl_alerts.yml:ro
       - prometheus_data:/prometheus
     networks:
       - monitoring
