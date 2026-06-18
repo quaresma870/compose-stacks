@@ -1,0 +1,99 @@
+services:
+
+  # ── Nginx ──────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx-sec
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/conf.d:/etc/nginx/conf.d:ro
+      - nginx_logs:/var/log/nginx
+      - certbot_www:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    networks:
+      - frontend
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # ── CrowdSec (IDS/IPS) ─────────────────────────────────────────────────────
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.6.3
+    container_name: crowdsec
+    restart: unless-stopped
+    environment:
+      COLLECTIONS: crowdsecurity/nginx crowdsecurity/linux crowdsecurity/sshd
+      GID: "${GID:-1000}"
+    volumes:
+      - crowdsec_data:/var/lib/crowdsec/data
+      - crowdsec_config:/etc/crowdsec
+      - nginx_logs:/var/log/nginx:ro
+      - /var/log/auth.log:/var/log/auth.log:ro
+      - /var/log/syslog:/var/log/syslog:ro
+    networks:
+      - security
+    depends_on:
+      - nginx
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── CrowdSec Bouncer (nginx) ───────────────────────────────────────────────
+  cs-bouncer-nginx:
+    image: crowdsecurity/nginx-bouncer:latest
+    container_name: cs-bouncer
+    restart: unless-stopped
+    environment:
+      CROWDSEC_BOUNCER_API_KEY: ${CROWDSEC_BOUNCER_KEY}
+      CROWDSEC_AGENT_HOST: crowdsec:8080
+    networks:
+      - security
+      - frontend
+    depends_on:
+      - crowdsec
+
+  # ── Fail2ban ───────────────────────────────────────────────────────────────
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TZ: ${TZ:-UTC}
+      F2B_LOG_LEVEL: INFO
+      F2B_DB_PURGE_AGE: 7d
+    volumes:
+      - ./config/fail2ban:/data
+      - /var/log:/var/log:ro
+      - nginx_logs:/var/log/nginx:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Certbot ────────────────────────────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done"
+
+volumes:
+  crowdsec_data:
+  crowdsec_config:
+  nginx_logs:
+  certbot_www:
+  certbot_certs:
+
+networks:
+  frontend:
+  security:
+    internal: true

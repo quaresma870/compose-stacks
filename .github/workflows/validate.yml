@@ -1,0 +1,42 @@
+name: Validate Stacks
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate Docker Compose files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate all docker-compose.yml files
+        run: |
+          echo "Validating compose files..."
+          find stacks/ -name "docker-compose.yml" | while read f; do
+            echo -n "  Checking $f ... "
+            docker compose -f "$f" config --quiet && echo "OK" || { echo "FAILED"; exit 1; }
+          done
+          echo "All compose files valid."
+
+      - name: Validate shell scripts
+        run: |
+          echo "Validating shell scripts..."
+          find scripts/ -name "*.sh" | while read f; do
+            echo -n "  Checking $f ... "
+            bash -n "$f" && echo "OK" || { echo "FAILED"; exit 1; }
+          done
+          echo "All scripts valid."
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Checking for hardcoded passwords..."
+          if grep -rn "password:" stacks/ --include="docker-compose.yml" | \
+             grep -v "\${" | grep -v "example" | grep -v "#"; then
+            echo "WARNING: Possible hardcoded passwords in compose files"
+          else
+            echo "No hardcoded passwords found."
+          fi
