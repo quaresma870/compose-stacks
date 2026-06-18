@@ -164,6 +164,18 @@ compose-stacks/
 
 ## Changelog
 
+### v1.0.4
+- feat: Docker Secrets for `postgres_password` and `redis_password` in `web-basic` — closes #2
+  (file-based secrets via `/opt/secrets/`; no passwords in `docker inspect` output)
+- docs: `docs/docker-secrets.md` — full guide for file-based and Swarm secrets
+
+### v1.0.4
+- feat: Docker Secrets in `web-basic` stack — closes #2
+  - `POSTGRES_PASSWORD_FILE` and `REDIS_PASSWORD_FILE` — not visible in `docker inspect`
+  - `secrets/` directory with `.gitignore` and generation guide
+  - `scripts/setup.sh` auto-generates secret files via `openssl rand`
+  - `docs/docker-secrets.md` — security comparison and setup guide
+
 ### v1.0.3
 - feat: nginx connection limits + slow-loris protection — closes #3
   (`limit_conn perip 20`, body/header/send timeouts 10s)

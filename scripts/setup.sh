@@ -83,6 +83,25 @@ if command -v openssl >/dev/null 2>&1; then
   echo ""
 fi
 
+
+  # ── Generate secret files ──────────────────────────────────────────────────
+  if [ "$STACK" = "web-basic" ] || [ "$STACK" = "full-stack" ]; then
+    SECRETS_DIR="$STACK_DEST/secrets"
+    mkdir -p "$SECRETS_DIR"
+    if command -v openssl >/dev/null 2>&1; then
+      info "Generating secret files in $SECRETS_DIR ..."
+      openssl rand -hex 32 > "$SECRETS_DIR/postgres_password.txt"
+      openssl rand -hex 24 > "$SECRETS_DIR/redis_password.txt"
+      chmod 600 "$SECRETS_DIR/"*.txt
+      success "Secret files generated (postgres_password.txt, redis_password.txt)"
+    else
+      warn "openssl not found — create secret files manually:"
+      echo "  echo 'your-password' > $SECRETS_DIR/postgres_password.txt"
+      echo "  echo 'your-password' > $SECRETS_DIR/redis_password.txt"
+      echo "  chmod 600 $SECRETS_DIR/*.txt"
+    fi
+  fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 success "Setup complete!"
 echo ""

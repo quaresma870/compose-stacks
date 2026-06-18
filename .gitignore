@@ -2,3 +2,7 @@
 *.pem
 *.key
 *.crt
+
+# Docker Secrets — never commit
+secrets/*.txt
+secrets/*.key
