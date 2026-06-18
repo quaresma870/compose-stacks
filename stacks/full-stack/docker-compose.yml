@@ -34,7 +34,9 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
