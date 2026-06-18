@@ -25,6 +25,13 @@ services:
     image: crowdsecurity/crowdsec:v1.6.3
     container_name: crowdsec
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+        reservations:
+          memory: 128m
     environment:
       COLLECTIONS: crowdsecurity/nginx crowdsecurity/linux crowdsecurity/sshd
       GID: "${GID:-1000}"
@@ -61,6 +68,13 @@ services:
     image: crazymax/fail2ban:latest
     container_name: fail2ban
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+        reservations:
+          memory: 64m
     network_mode: host
     cap_add:
       - NET_ADMIN

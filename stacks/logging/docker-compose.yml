@@ -5,6 +5,13 @@ services:
     image: grafana/loki:3.2.0
     container_name: loki
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.50"
+        reservations:
+          memory: 256m
     command: -config.file=/etc/loki/loki.yml
     volumes:
       - ./config/loki.yml:/etc/loki/loki.yml:ro
@@ -25,6 +32,13 @@ services:
     image: grafana/promtail:3.2.0
     container_name: promtail
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+        reservations:
+          memory: 64m
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
       - ./config/promtail.yml:/etc/promtail/promtail.yml:ro
@@ -45,6 +59,13 @@ services:
     image: grafana/grafana:11.2.0
     container_name: grafana-logs
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.50"
+        reservations:
+          memory: 128m
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:

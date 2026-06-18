@@ -164,6 +164,21 @@ compose-stacks/
 
 ## Changelog
 
+### v1.0.2
+- feat: resource limits (memory + CPU) added to all services in all stacks — closes #1
+  - nginx: 128m / 0.25 CPU
+  - app: 512m / 1.0 CPU
+  - postgres: 512m / 0.5 CPU
+  - redis: 256m / 0.25 CPU
+  - prometheus: 512m / 0.5 CPU
+  - grafana: 256m / 0.5 CPU
+  - loki: 512m / 0.5 CPU
+  - (full list in each stack's docker-compose.yml)
+
+---
+
+## Changelog
+
 ### v1.0.1
 - fix: CI validation — `.env` files now created from `.env.example` before `docker compose config` runs
 - fix: `env_file` set to `required: false` in `full-stack` and `web-basic` — prevents failure when `.env` is absent
