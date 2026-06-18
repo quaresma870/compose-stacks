@@ -164,6 +164,12 @@ compose-stacks/
 
 ## Changelog
 
+### v1.0.3
+- feat: nginx connection limits + slow-loris protection — closes #3
+  (`limit_conn perip 20`, `client_body_timeout 10s`, `send_timeout 10s`)
+- feat: SSL certificate expiry Prometheus alerts — closes #4
+  (`SSLCertExpiringSoon` < 14 days, `SSLCertExpired` — fires immediately)
+
 ### v1.0.2
 - feat: resource limits (memory + CPU) added to all services in all stacks — closes #1
   - nginx: 128m / 0.25 CPU
