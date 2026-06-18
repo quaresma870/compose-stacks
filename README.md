@@ -164,10 +164,30 @@ compose-stacks/
 
 ## Changelog
 
+### v1.0.5
+- feat: zero-downtime update script (`scripts/update.sh`) — closes #5
+  - Pulls new images while old containers keep serving traffic
+  - Rolling restart per service with health-check verification
+  - Automatic rollback if a service fails to become healthy
+  - Stateful services (postgres, redis, loki) restart last with confirmation prompt
+- feat: Docker Secrets for Grafana password in `monitoring`, `logging`, `full-stack` — closes #6
+  - `GF_SECURITY_ADMIN_PASSWORD__FILE` via `/run/secrets/grafana_password`
+  - `setup.sh` generates `grafana_password.txt` automatically
+
 ### v1.0.4
 - feat: Docker Secrets for `postgres_password` and `redis_password` in `web-basic` — closes #2
   (file-based secrets via `/opt/secrets/`; no passwords in `docker inspect` output)
 - docs: `docs/docker-secrets.md` — full guide for file-based and Swarm secrets
+
+### v1.0.5
+- feat: zero-downtime update script (`scripts/update.sh`) — closes #5
+  - Pulls new images while old containers keep serving traffic
+  - Rolling restart per service with health-check verification
+  - Automatic rollback if a service fails to become healthy
+  - Stateful services (postgres, redis, loki) restart last with confirmation prompt
+- feat: Docker Secrets for Grafana password in `monitoring`, `logging`, `full-stack` — closes #6
+  - `GF_SECURITY_ADMIN_PASSWORD__FILE` via `/run/secrets/grafana_password`
+  - `setup.sh` generates `grafana_password.txt` automatically
 
 ### v1.0.4
 - feat: Docker Secrets in `web-basic` stack — closes #2

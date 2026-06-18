@@ -49,10 +49,12 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    secrets:
+      - grafana_password
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -153,6 +155,10 @@ volumes:
   prometheus_data:
   grafana_data:
   alertmanager_data:
+
+secrets:
+  grafana_password:
+    file: ./secrets/grafana_password.txt
 
 networks:
   monitoring:
