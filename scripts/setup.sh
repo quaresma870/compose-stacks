@@ -85,9 +85,10 @@ fi
 
 
   # ── Generate secret files ──────────────────────────────────────────────────
+  SECRETS_DIR="$STACK_DEST/secrets"
+  mkdir -p "$SECRETS_DIR"
+
   if [ "$STACK" = "web-basic" ] || [ "$STACK" = "full-stack" ]; then
-    SECRETS_DIR="$STACK_DEST/secrets"
-    mkdir -p "$SECRETS_DIR"
     if command -v openssl >/dev/null 2>&1; then
       info "Generating secret files in $SECRETS_DIR ..."
       openssl rand -hex 32 > "$SECRETS_DIR/postgres_password.txt"
@@ -99,6 +100,19 @@ fi
       echo "  echo 'your-password' > $SECRETS_DIR/postgres_password.txt"
       echo "  echo 'your-password' > $SECRETS_DIR/redis_password.txt"
       echo "  chmod 600 $SECRETS_DIR/*.txt"
+    fi
+  fi
+
+  if [ "$STACK" = "monitoring" ] || [ "$STACK" = "logging" ] || [ "$STACK" = "full-stack" ]; then
+    if command -v openssl >/dev/null 2>&1; then
+      info "Generating Grafana secret in $SECRETS_DIR ..."
+      openssl rand -hex 16 > "$SECRETS_DIR/grafana_password.txt"
+      chmod 600 "$SECRETS_DIR/grafana_password.txt"
+      success "Secret file generated (grafana_password.txt)"
+    else
+      warn "openssl not found — create secret file manually:"
+      echo "  echo 'your-password' > $SECRETS_DIR/grafana_password.txt"
+      echo "  chmod 600 $SECRETS_DIR/grafana_password.txt"
     fi
   fi
 

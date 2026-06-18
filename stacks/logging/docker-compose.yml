@@ -70,8 +70,10 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
       GF_USERS_ALLOW_SIGN_UP: "false"
+    secrets:
+      - grafana_password
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -88,6 +90,10 @@ services:
 volumes:
   loki_data:
   grafana_data:
+
+secrets:
+  grafana_password:
+    file: ./secrets/grafana_password.txt
 
 networks:
   logging:
