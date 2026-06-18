@@ -13,12 +13,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Create .env files from .env.example for validation
+        run: |
+          find stacks/ -name ".env.example" | while read f; do
+            dir=$(dirname "$f")
+            cp "$f" "$dir/.env"
+            echo "  Created $dir/.env"
+          done
+
       - name: Validate all docker-compose.yml files
         run: |
           echo "Validating compose files..."
-          find stacks/ -name "docker-compose.yml" | while read f; do
+          find stacks/ -name "docker-compose.yml" | sort | while read f; do
             echo -n "  Checking $f ... "
-            docker compose -f "$f" config --quiet && echo "OK" || { echo "FAILED"; exit 1; }
+            docker compose -f "$f" config --quiet 2>/dev/null && echo "OK" || { echo "FAILED"; exit 1; }
           done
           echo "All compose files valid."
 
@@ -40,3 +48,7 @@ jobs:
           else
             echo "No hardcoded passwords found."
           fi
+
+      - name: Cleanup .env files
+        if: always()
+        run: find stacks/ -name ".env" -not -name ".env.example" -delete
