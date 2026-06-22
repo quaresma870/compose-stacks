@@ -224,7 +224,7 @@ services:
 
   # ── Certbot ────────────────────────────────────────────────────────────────
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/certbot:v5.6.0
     container_name: certbot
     volumes:
       - certbot_www:/var/www/certbot

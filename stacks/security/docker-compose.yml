@@ -50,6 +50,16 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   # ── CrowdSec Bouncer (nginx) ───────────────────────────────────────────────
+  # ⚠️  UNVERIFIED IMAGE — could not confirm "crowdsecurity/nginx-bouncer" is
+  # currently published on Docker Hub. The crowdsecurity org's current
+  # repositories (as of this check) include crowdsecurity/openresty (a
+  # combined nginx+bouncer image) and crowdsecurity/lua-bouncer-plugin, but
+  # not this exact name — it may have been renamed/deprecated. Verify with
+  # `docker pull crowdsecurity/nginx-bouncer` before relying on this stack,
+  # and consider crowdsecurity/openresty as the modern equivalent if this
+  # pull fails. Left un-pinned (:latest) deliberately, since pinning to a
+  # guessed version number for an image whose current existence isn't
+  # confirmed would be worse than flagging it honestly.
   cs-bouncer-nginx:
     image: crowdsecurity/nginx-bouncer:latest
     container_name: cs-bouncer
@@ -65,7 +75,7 @@ services:
 
   # ── Fail2ban ───────────────────────────────────────────────────────────────
   fail2ban:
-    image: crazymax/fail2ban:latest
+    image: crazymax/fail2ban:1.1.0-r0
     container_name: fail2ban
     restart: unless-stopped
     deploy:
@@ -93,7 +103,7 @@ services:
 
   # ── Certbot ────────────────────────────────────────────────────────────────
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/certbot:v5.6.0
     container_name: certbot
     volumes:
       - certbot_www:/var/www/certbot
