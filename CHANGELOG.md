@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. See the
 [README](README.md) for current features and usage.
 
+### v1.0.6
+- fix: **3 images still used `:latest` while every other image across all 5 stacks was carefully
+  pinned to an exact version** (down to specific patch releases like `v0.50.0`, `v1.6.3`) —
+  inconsistent with the rest of the project's demonstrated standard, and a real reproducibility
+  risk (a `docker compose pull && up` done today vs. next month could pull a materially different
+  image). Verified each image's actual current release before pinning, rather than guessing:
+  - `certbot/certbot` → `v5.6.0` (current stable per the project's official GitHub releases)
+  - `crazymax/fail2ban` → `1.1.0-r0` (current stable per the official GitHub releases)
+  - `crowdsecurity/nginx-bouncer` → **left as `:latest`, deliberately, with a prominent comment**.
+    Could not confirm this image is currently published under this exact name on Docker Hub — the
+    `crowdsecurity` organisation's current repositories include `crowdsecurity/openresty` (a
+    combined nginx+bouncer image) and `crowdsecurity/lua-bouncer-plugin`, but nothing matching
+    `nginx-bouncer` was found. Pinning a guessed version number for an image whose current
+    existence isn't confirmed would be worse than flagging it honestly — operators relying on the
+    `security` stack should verify `docker pull crowdsecurity/nginx-bouncer` works before deploying,
+    and consider `crowdsecurity/openresty` as the likely modern equivalent if it doesn't.
+- chore: removed leftover empty junk directories from an early shell command that didn't expand
+  brace patterns as intended — never tracked in git, purely local clutter.
+- noted (not yet fixed): `stacks/security/docker-compose.yml` has zero `healthcheck:` blocks across
+  all of its services, while every other stack has at least some — worth a follow-up pass.
+
 ### v1.0.5
 - feat: zero-downtime update script (`scripts/update.sh`) — closes #5
   - Pulls new images while old containers keep serving traffic
