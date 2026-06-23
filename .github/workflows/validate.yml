@@ -73,30 +73,33 @@ jobs:
       - name: Configure environment
         run: cp .env.example .env
 
-      - name: Boot app + postgres + redis
+      - name: Boot postgres + redis
         run: |
-          # Scoped to these three deliberately: nginx's config requires
-          # real TLS cert files to start at all, which is a separate
-          # concern from proving secrets/healthchecks/dependency-ordering
-          # actually work end-to-end, which is what this test is for.
-          # `up -d app postgres redis` only starts these plus whatever
-          # they depend on — nginx/certbot are never started here.
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app postgres redis
+          # Scoped to postgres+redis specifically — they're the stateful
+          # services where secrets/healthchecks/dependency-ordering
+          # actually matter and are worth proving boot correctly for real,
+          # not just that `docker compose config` can parse the YAML.
+          #
+          # app/nginx are deliberately out of scope for this pass: app is
+          # a user-replaceable placeholder with no real application logic
+          # to validate, and nginx's config requires real TLS certs to
+          # even start — both are genuine further work, not done here.
+          docker compose -f docker-compose.yml up -d postgres redis
 
-      - name: Wait for all three to report healthy
+      - name: Wait for postgres + redis to report healthy
         run: |
           MAX_WAIT=180
           ELAPSED=0
           while true; do
-            UNHEALTHY=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps --format json \
+            UNHEALTHY=$(docker compose -f docker-compose.yml ps --format json \
               | python3 ci/wait_healthy.py)
             if [ -z "$UNHEALTHY" ]; then
-              echo "All services healthy."
+              echo "postgres + redis healthy."
               break
             fi
             if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
               echo "Timed out waiting for: $UNHEALTHY"
-              docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
+              docker compose -f docker-compose.yml ps
               exit 1
             fi
             echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
@@ -104,22 +107,20 @@ jobs:
             ELAPSED=$((ELAPSED + 5))
           done
 
-      - name: Verify the app is actually reachable, not just "healthy"
+      - name: Verify postgres is actually accepting real connections
         run: |
-          # app only joins the `backend` network, which is `internal: true`
-          # by design — Docker doesn't wire up host->container port
-          # publishing for a container that's exclusively on an internal
-          # network, so this deliberately checks from inside the network
-          # via `exec`, the same way nginx actually reaches app in
-          # production, rather than (non-functionally) curling from the
-          # GitHub Actions runner's host network.
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
-            wget -qO- http://localhost:8000/health
+          docker compose -f docker-compose.yml exec -T postgres \
+            psql -U "${POSTGRES_USER:-app}" -d "${POSTGRES_DB:-app}" -c "SELECT 1;"
+
+      - name: Verify redis is actually accepting real connections
+        run: |
+          docker compose -f docker-compose.yml exec -T redis \
+            sh -c 'redis-cli -a "$(cat /run/secrets/redis_password)" set ci_smoke_test ok && redis-cli -a "$(cat /run/secrets/redis_password)" get ci_smoke_test'
 
       - name: Dump logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --tail=100
+        run: docker compose -f docker-compose.yml logs --tail=100
 
       - name: Tear down
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        run: docker compose -f docker-compose.yml down -v
