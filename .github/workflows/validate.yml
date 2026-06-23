@@ -81,7 +81,33 @@ jobs:
           # actually work end-to-end, which is what this test is for.
           # `up -d app postgres redis` only starts these plus whatever
           # they depend on — nginx/certbot are never started here.
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app postgres redis
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml pull postgres redis app
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres redis
+
+      - name: Wait for postgres + redis to report healthy
+        run: |
+          MAX_WAIT=180
+          ELAPSED=0
+          while true; do
+            UNHEALTHY=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps --format json \
+              | python3 ci/wait_healthy.py)
+            if [ -z "$UNHEALTHY" ]; then
+              echo "postgres + redis healthy."
+              break
+            fi
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Timed out waiting for: $UNHEALTHY"
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml logs postgres redis
+              exit 1
+            fi
+            echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+
+      - name: Now bring up app too
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
 
       - name: Wait for all three to report healthy
         run: |
@@ -97,6 +123,7 @@ jobs:
             if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
               echo "Timed out waiting for: $UNHEALTHY"
               docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app
               exit 1
             fi
             echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
