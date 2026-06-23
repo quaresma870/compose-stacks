@@ -125,8 +125,17 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app cat /etc/nginx/conf.d/default.conf 2>&1 || echo "EXEC FAILED"
             echo "--- manual healthcheck command run inside the container ---"
             docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app wget -qO- http://localhost:8000/health 2>&1 || echo "MANUAL WGET FAILED: $?"
+            echo "--- docker port mapping for app ---"
+            docker port $(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -q app) 2>&1 || echo "DOCKER PORT FAILED"
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          } | tee diagnostic-output.txt
+
+      - name: Upload diagnostic output as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-output
+          path: stacks/web-basic/diagnostic-output.txt
 
       - name: Verify the app is actually reachable, not just "healthy"
         run: curl -fsS http://localhost:8000/health
