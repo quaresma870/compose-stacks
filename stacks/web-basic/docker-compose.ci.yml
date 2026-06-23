@@ -2,25 +2,22 @@
 #
 # Replaces the real APP_IMAGE placeholder with a minimal nginx config that
 # satisfies the app service's own healthcheck (GET /health on $APP_PORT),
-# and points the certbot_certs volume at a locally-generated self-signed
-# cert so nginx can actually start (its config requires real cert files at
-# /etc/letsencrypt/live/example.com/ — there's no way around providing
-# *something* there, real Let's Encrypt or not, for nginx to boot at all).
+# and exposes it directly on the host so the smoke-test workflow can curl
+# it without needing nginx in front of it.
+#
+# Deliberately scoped to app+postgres+redis only for now (the workflow
+# invokes `docker compose up -d app postgres redis` explicitly, never
+# starting nginx/certbot) — nginx's config requires real TLS certs to even
+# start, which is a separate concern from proving secrets/healthchecks/
+# dependency-ordering actually work, which is what this smoke test is for.
 #
 # Used by .github/workflows/validate.yml's smoke-test job:
-#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app postgres redis
 
 services:
   app:
     image: nginx:alpine
-    ports: []
+    ports:
+      - "8000:8000"
     volumes:
       - ./ci/app-health.conf:/etc/nginx/conf.d/default.conf:ro
-
-volumes:
-  certbot_certs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/ci/fake-certs

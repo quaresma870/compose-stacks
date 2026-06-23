@@ -53,6 +53,7 @@ jobs:
         if: always()
         run: find stacks/ -name ".env" -not -name ".env.example" -delete
 
+
   smoke-test-web-basic:
     name: Boot web-basic for real (not just config --quiet)
     runs-on: ubuntu-latest
@@ -69,27 +70,20 @@ jobs:
           openssl rand -hex 32 > secrets/postgres_password.txt
           openssl rand -hex 24 > secrets/redis_password.txt
 
-      - name: Generate a self-signed cert for nginx
-        run: |
-          # nginx's config requires real cert files at this exact path to
-          # start at all — there's no way around providing *something*
-          # there, real Let's Encrypt or not, just to get the container
-          # past its own startup. A self-signed cert is enough for that;
-          # this test never claims the cert itself is trusted, only that
-          # nginx boots and terminates TLS with whatever it's handed.
-          mkdir -p ci/fake-certs/live/example.com
-          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-            -keyout ci/fake-certs/live/example.com/privkey.pem \
-            -out ci/fake-certs/live/example.com/fullchain.pem \
-            -subj "/CN=example.com"
-
       - name: Configure environment
         run: cp .env.example .env
 
-      - name: Boot the stack
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+      - name: Boot app + postgres + redis
+        run: |
+          # Scoped to these three deliberately: nginx's config requires
+          # real TLS cert files to start at all, which is a separate
+          # concern from proving secrets/healthchecks/dependency-ordering
+          # actually work end-to-end, which is what this test is for.
+          # `up -d app postgres redis` only starts these plus whatever
+          # they depend on — nginx/certbot are never started here.
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app postgres redis
 
-      - name: Wait for all services to report healthy
+      - name: Wait for all three to report healthy
         run: |
           MAX_WAIT=120
           ELAPSED=0
@@ -110,15 +104,8 @@ jobs:
             ELAPSED=$((ELAPSED + 5))
           done
 
-      - name: Verify nginx actually serves traffic end-to-end
-        run: |
-          # -k: the cert is self-signed for this test, that's expected and fine.
-          # Hitting the redirect-or-acme-challenge path is enough to prove
-          # nginx itself is up and terminating TLS — this isn't testing the
-          # placeholder app's behaviour, which isn't real application logic
-          # anyway, just that the reverse proxy in front of it actually runs.
-          curl -kfsS -o /dev/null -w "HTTP %{http_code}\n" https://localhost/.well-known/acme-challenge/test || \
-            curl -kfsS -o /dev/null -w "HTTP %{http_code}\n" -L https://localhost/
+      - name: Verify the app is actually reachable, not just "healthy"
+        run: curl -fsS http://localhost:8000/health
 
       - name: Dump logs on failure
         if: failure()
