@@ -1,0 +1,212 @@
+services:
+
+  # ── Traefik (reverse proxy + automatic TLS) ─────────────────────────────────
+  traefik:
+    image: traefik:v3.7.5
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      # Dashboard — bind to localhost only by default. Don't publish this
+      # port to 0.0.0.0 without putting real auth in front of it (see
+      # docs/docker-secrets.md's note on this, or use a basic-auth
+      # middleware label on the dashboard router in production).
+      - "127.0.0.1:${DASHBOARD_PORT:-8080}:8080"
+    command:
+      - --providers.docker=true
+      # The opposite of nginx's default-everything-routable behaviour:
+      # a container is invisible to Traefik until it explicitly opts in
+      # with traefik.enable=true. Least-surprise default for anything
+      # bigger than a toy setup.
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # HTTP -> HTTPS redirect at the entrypoint level (equivalent to
+      # web-basic's nginx server block that does the same).
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.email=${CERTBOT_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --api.dashboard=true
+      # Required for `traefik healthcheck --ping` below to work at all —
+      # confirmed against Traefik's own docs/community reports: without
+      # this, the healthcheck command fails outright with "please enable
+      # `ping` to use health check", regardless of anything else being
+      # configured correctly.
+      - --ping=true
+      - --accesslog=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+    volumes:
+      # Read-only: Traefik only needs to list/inspect containers and their
+      # labels, never to create/modify/kill anything.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - frontend
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+        reservations:
+          memory: 64m
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    labels:
+      # Dashboard, routed through Traefik itself rather than the raw
+      # 127.0.0.1:8080 port — convenient, but still gate it behind a
+      # router rule + (in production) an auth middleware before exposing
+      # this beyond localhost. Disabled by default (see .env.example).
+      - "traefik.enable=${TRAEFIK_DASHBOARD_ENABLE:-false}"
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DASHBOARD_HOST:-traefik.localhost}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+
+  # ── Application (replace with your image) ─────────────────────────────────
+  app:
+    image: ${APP_IMAGE:-nginx:alpine}
+    container_name: app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    secrets:
+      - postgres_password
+      - redis_password
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.00"
+        reservations:
+          memory: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:${APP_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    labels:
+      # This is the entire routing config — no nginx server block, no
+      # certbot renewal loop to maintain, no manually-mounted cert volume.
+      # Traefik discovers this container via the Docker provider above and
+      # wires up the route + automatic Let's Encrypt cert from these
+      # labels alone.
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app.loadbalancer.server.port=${APP_PORT:-8000}"
+      # Equivalent to nginx's limit_req_zone in web-basic — a per-router
+      # rate limit middleware instead of an nginx-config directive.
+      - "traefik.http.middlewares.app-ratelimit.ratelimit.average=100"
+      - "traefik.http.middlewares.app-ratelimit.ratelimit.burst=50"
+      - "traefik.http.routers.app.middlewares=app-ratelimit"
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.50"
+        reservations:
+          memory: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    # Redis doesn't support _FILE env vars — use config file with secret
+    command: >
+      sh -c "redis-server
+      --requirepass $$(cat /run/secrets/redis_password)
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru"
+    secrets:
+      - redis_password
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+        reservations:
+          memory: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$(cat /run/secrets/redis_password) ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+# ── Secrets (file-based — contents never appear in docker inspect) ──────────
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+
+volumes:
+  postgres_data:
+  redis_data:
+  traefik_certs:
+
+networks:
+  frontend:
+  backend:
+    internal: true

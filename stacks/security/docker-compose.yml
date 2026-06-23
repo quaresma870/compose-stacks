@@ -1,6 +1,12 @@
 services:
 
   # ── Nginx ──────────────────────────────────────────────────────────────────
+  # No healthcheck: block added here yet, deliberately — this service's
+  # ./config/nginx.conf and ./config/conf.d aren't actually present anywhere
+  # in this repo (tracked separately: see issue about missing config files),
+  # so any healthcheck written against them right now would be untestable
+  # and potentially misleading. Add one alongside whatever config actually
+  # ships.
   nginx:
     image: nginx:1.27-alpine
     container_name: nginx-sec
@@ -45,6 +51,17 @@ services:
       - security
     depends_on:
       - nginx
+    healthcheck:
+      # cscli lapi status is CrowdSec's own current recommended healthcheck
+      # (confirmed against an official follow-up after crowdsecurity/
+      # crowdsec#4165, where an earlier/different check pattern was hammering
+      # the LAPI for some users). Confirms the Local API is actually up and
+      # answering, not just that the process exists.
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -60,6 +77,10 @@ services:
   # pull fails. Left un-pinned (:latest) deliberately, since pinning to a
   # guessed version number for an image whose current existence isn't
   # confirmed would be worse than flagging it honestly.
+  #
+  # No healthcheck here either, for the same reason — can't responsibly
+  # write one against an image whose current existence/behaviour isn't
+  # confirmed.
   cs-bouncer-nginx:
     image: crowdsecurity/nginx-bouncer:latest
     container_name: cs-bouncer
@@ -74,6 +95,12 @@ services:
       - crowdsec
 
   # ── Fail2ban ───────────────────────────────────────────────────────────────
+  # No healthcheck: block needed here — crazymax/fail2ban's own Dockerfile
+  # already bakes one in (HEALTHCHECK CMD fail2ban-client ping, confirmed
+  # against the image's published Dockerfile), and `docker compose ps`
+  # reports it automatically. Documented explicitly so this isn't mistaken
+  # for an oversight — it's the one service in this stack that already had
+  # working health reporting before this change.
   fail2ban:
     image: crazymax/fail2ban:1.1.0-r0
     container_name: fail2ban
@@ -102,9 +129,14 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   # ── Certbot ────────────────────────────────────────────────────────────────
+  # No healthcheck: this is a sleep-loop renewal cron, not a listening
+  # service — there's nothing meaningful to probe. Its own exit code (the
+  # `certbot renew` call failing hard enough to kill the loop) is the only
+  # real failure signal.
   certbot:
     image: certbot/certbot:v5.6.0
     container_name: certbot
+    restart: unless-stopped   # was missing — web-basic's identical certbot service already has this
     volumes:
       - certbot_www:/var/www/certbot
       - certbot_certs:/etc/letsencrypt
