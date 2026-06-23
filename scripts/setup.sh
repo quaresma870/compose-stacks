@@ -31,15 +31,17 @@ echo "  2) monitoring   — prometheus + grafana + alertmanager + node-exporter"
 echo "  3) security     — nginx + crowdsec + fail2ban + certbot"
 echo "  4) logging      — loki + promtail + grafana"
 echo "  5) full-stack   — everything combined"
+echo "  6) web-traefik  — traefik + app + postgres + redis (auto TLS, label-based routing)"
 echo ""
 
-read -rp "Select stack [1-5]: " CHOICE
+read -rp "Select stack [1-6]: " CHOICE
 case $CHOICE in
   1) STACK="web-basic"   ;;
   2) STACK="monitoring"  ;;
   3) STACK="security"    ;;
   4) STACK="logging"     ;;
   5) STACK="full-stack"  ;;
+  6) STACK="web-traefik" ;;
   *) error "Invalid choice" ;;
 esac
 
@@ -88,7 +90,7 @@ fi
   SECRETS_DIR="$STACK_DEST/secrets"
   mkdir -p "$SECRETS_DIR"
 
-  if [ "$STACK" = "web-basic" ] || [ "$STACK" = "full-stack" ]; then
+  if [ "$STACK" = "web-basic" ] || [ "$STACK" = "full-stack" ] || [ "$STACK" = "web-traefik" ]; then
     if command -v openssl >/dev/null 2>&1; then
       info "Generating secret files in $SECRETS_DIR ..."
       openssl rand -hex 32 > "$SECRETS_DIR/postgres_password.txt"

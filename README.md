@@ -14,6 +14,7 @@ Production-ready Docker Compose stacks. Pick one, copy it, fill in your `.env` a
 | Stack | Services | Use case |
 |-------|----------|----------|
 | [`web-basic`](stacks/web-basic/) | nginx + app + postgres + redis + certbot | Any web app |
+| [`web-traefik`](stacks/web-traefik/) | traefik + app + postgres + redis | Any web app — auto TLS, label-based routing, no nginx config to maintain |
 | [`monitoring`](stacks/monitoring/) | prometheus + grafana + alertmanager + node-exporter + cadvisor | Metrics & dashboards |
 | [`security`](stacks/security/) | nginx + crowdsec + fail2ban + certbot | Hardened reverse proxy |
 | [`logging`](stacks/logging/) | loki + promtail + grafana | Centralised log aggregation |
@@ -63,6 +64,28 @@ Minimal production-ready web stack:
 - **postgres 16** — database with health checks
 - **redis 7** — cache with password and memory limits
 - **certbot** — automatic SSL certificate renewal
+
+### web-traefik
+Same scope as `web-basic` (app + postgres + redis), different reverse proxy:
+- **Traefik** — automatic Let's Encrypt (no certbot renewal loop to maintain),
+  routing configured via Docker labels on each service instead of an nginx
+  config file, HTTP→HTTPS redirect and per-router rate limiting built in
+- **app** — your application (replace `APP_IMAGE` in `.env`); routing comes
+  from the `traefik.*` labels already on this service in the compose file —
+  add a new routed service by copying that label block, not by editing a
+  separate nginx config
+- **postgres 16** / **redis 7** — identical to `web-basic`
+
+Pick this over `web-basic` if you'd rather not hand-maintain an nginx config
+and certbot renewal cron, especially once you're running more than one
+routed service. Pick `web-basic` if you want the proxy config as a plain,
+fully-inspectable file rather than spread across container labels, or if
+you're already comfortable with nginx specifically.
+
+Traefik's dashboard is disabled by default (`TRAEFIK_DASHBOARD_ENABLE=false`
+in `.env`) — it has no built-in authentication, so put a basic-auth
+middleware in front of it before enabling and exposing it beyond
+`127.0.0.1`.
 
 ### monitoring
 Full observability stack:
@@ -122,6 +145,11 @@ compose-stacks/
 │   │   └── config/
 │   │       ├── nginx.conf
 │   │       ├── conf.d/app.conf
+│   │       └── postgres/init.sql
+│   ├── web-traefik/
+│   │   ├── docker-compose.yml      # routing via traefik.* labels, no nginx config file
+│   │   ├── .env.example
+│   │   └── config/
 │   │       └── postgres/init.sql
 │   ├── monitoring/
 │   │   ├── docker-compose.yml
