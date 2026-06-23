@@ -109,27 +109,24 @@ jobs:
       - name: Now bring up app too
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
 
-      - name: Wait for all three to report healthy
+      - name: Diagnostic — wait a fixed amount, then inspect directly
         run: |
-          MAX_WAIT=120
-          ELAPSED=0
-          while true; do
-            UNHEALTHY=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps --format json \
-              | python3 ci/wait_healthy.py)
-            if [ -z "$UNHEALTHY" ]; then
-              echo "All services healthy."
-              break
-            fi
-            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
-              echo "Timed out waiting for: $UNHEALTHY"
-              docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
-              docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app
-              exit 1
-            fi
-            echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-          done
+          {
+            echo "## Diagnostic output"
+            echo '```'
+            sleep 15
+            echo "--- docker compose ps ---"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
+            echo "--- app container logs ---"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app
+            echo "--- curl from host (bypassing Docker's health status entirely) ---"
+            curl -v http://localhost:8000/health 2>&1 || echo "CURL FAILED: $?"
+            echo "--- nginx config actually loaded inside the container ---"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app cat /etc/nginx/conf.d/default.conf 2>&1 || echo "EXEC FAILED"
+            echo "--- manual healthcheck command run inside the container ---"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app wget -qO- http://localhost:8000/health 2>&1 || echo "MANUAL WGET FAILED: $?"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Verify the app is actually reachable, not just "healthy"
         run: curl -fsS http://localhost:8000/health
