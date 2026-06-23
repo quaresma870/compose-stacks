@@ -81,10 +81,9 @@ jobs:
           # actually work end-to-end, which is what this test is for.
           # `up -d app postgres redis` only starts these plus whatever
           # they depend on — nginx/certbot are never started here.
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml pull postgres redis app
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres redis
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app postgres redis
 
-      - name: Wait for postgres + redis to report healthy
+      - name: Wait for all three to report healthy
         run: |
           MAX_WAIT=180
           ELAPSED=0
@@ -92,13 +91,12 @@ jobs:
             UNHEALTHY=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps --format json \
               | python3 ci/wait_healthy.py)
             if [ -z "$UNHEALTHY" ]; then
-              echo "postgres + redis healthy."
+              echo "All services healthy."
               break
             fi
             if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
               echo "Timed out waiting for: $UNHEALTHY"
               docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
-              docker compose -f docker-compose.yml -f docker-compose.ci.yml logs postgres redis
               exit 1
             fi
             echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
@@ -106,39 +104,17 @@ jobs:
             ELAPSED=$((ELAPSED + 5))
           done
 
-      - name: Now bring up app too
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
-
-      - name: Diagnostic — wait a fixed amount, then inspect directly
-        run: |
-          {
-            echo "## Diagnostic output"
-            echo '```'
-            sleep 15
-            echo "--- docker compose ps ---"
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
-            echo "--- app container logs ---"
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app
-            echo "--- curl from host (bypassing Docker's health status entirely) ---"
-            curl -v http://localhost:8000/health 2>&1 || echo "CURL FAILED: $?"
-            echo "--- nginx config actually loaded inside the container ---"
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app cat /etc/nginx/conf.d/default.conf 2>&1 || echo "EXEC FAILED"
-            echo "--- manual healthcheck command run inside the container ---"
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app wget -qO- http://localhost:8000/health 2>&1 || echo "MANUAL WGET FAILED: $?"
-            echo "--- docker port mapping for app ---"
-            docker port $(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -q app) 2>&1 || echo "DOCKER PORT FAILED"
-            echo '```'
-          } | tee diagnostic-output.txt
-
-      - name: Upload diagnostic output as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostic-output
-          path: stacks/web-basic/diagnostic-output.txt
-
       - name: Verify the app is actually reachable, not just "healthy"
-        run: curl -fsS http://localhost:8000/health
+        run: |
+          # app only joins the `backend` network, which is `internal: true`
+          # by design — Docker doesn't wire up host->container port
+          # publishing for a container that's exclusively on an internal
+          # network, so this deliberately checks from inside the network
+          # via `exec`, the same way nginx actually reaches app in
+          # production, rather than (non-functionally) curling from the
+          # GitHub Actions runner's host network.
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
+            wget -qO- http://localhost:8000/health
 
       - name: Dump logs on failure
         if: failure()
