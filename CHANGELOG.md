@@ -3,6 +3,28 @@
 All notable changes to this project are documented here. See the
 [README](README.md) for current features and usage.
 
+### v1.2.0
+- fix: **`security` and `full-stack` stacks' missing `./config/` files** — both stacks'
+  `docker-compose.yml` referenced config files that didn't exist anywhere in the repo, making both
+  undeployable as committed. Built `security/config/` (nginx, fail2ban jails using fail2ban's own
+  bundled filters) from scratch, and `full-stack/config/` mostly by reusing and adapting what
+  `monitoring/` and `logging/` already had (fixed a broken `localhost` alertmanager URL and a
+  datasource `isDefault` conflict along the way) — closes #12.
+- fix: found and fixed a **real, separate, pre-existing gap in the already-shipping `monitoring`
+  stack** while investigating #12 — its `docker-compose.yml` bind-mounted
+  `./config/grafana/dashboards`, but that directory never existed either. Added a real, functional
+  dashboard (host CPU/memory/disk, container count/CPU) rather than an empty placeholder.
+- feat: **new CI check** — `validate.yml` now confirms every repo-relative bind-mount source path
+  in every stack's `docker-compose.yml` actually exists on disk, catching the exact class of gap
+  above before it can recur. `docker compose config --quiet` alone never caught this, since Compose
+  only needs bind-mount sources to exist at real `up` time. Verified on real CI: deliberately
+  removed `security/config/` and confirmed the new check fails with a clear message, then restored
+  it and confirmed green.
+- Two further, unrelated findings from this investigation (an inert Prometheus alert rule in
+  `monitoring` with no producing exporter, and a Docker `loki` logging driver in `full-stack` that
+  can't actually reach Loki due to a host/container networking mismatch) are filed as separate
+  follow-up issues rather than folded into this fix.
+
 ### v1.1.0
 - feat: **CI actually boots `web-basic` for real**, not just `docker compose config --quiet` —
   a new `smoke-test-web-basic` job generates real secrets, boots postgres + redis for real, polls
