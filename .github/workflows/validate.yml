@@ -30,6 +30,73 @@ jobs:
           done
           echo "All compose files valid."
 
+      - name: Confirm every bind-mount source path actually exists on disk
+        # `docker compose config --quiet` (the step above) validates YAML
+        # syntax and variable interpolation, but does NOT require
+        # bind-mount source paths to exist — Compose only needs that at
+        # real `up` time. This is exactly the class of gap issue #12
+        # found (security and full-stack's docker-compose.yml files
+        # referenced eight ./config/... paths that didn't exist anywhere
+        # in the repo, undetected by the step above, undeployable as
+        # committed) — this step exists specifically so that class of
+        # gap can't silently recur for a new stack added later.
+        #
+        # Stdlib-only Python, no PyYAML dependency, matching the existing
+        # ci/wait_healthy.py helper's own convention (this repo doesn't
+        # otherwise depend on any Python packages) — a docker-compose.yml
+        # bind mount source is reliably identifiable by line-based
+        # parsing (starts with ./, ../, or / before the first
+        # unescaped colon), without needing a full YAML parse.
+        run: |
+          python3 - <<'EOF'
+          import re
+          import sys
+          from pathlib import Path
+
+          missing = []
+          for compose_file in sorted(Path("stacks").glob("*/docker-compose.yml")):
+              stack_dir = compose_file.parent
+              in_volumes_block = False
+              for line in compose_file.read_text().splitlines():
+                  stripped = line.strip()
+                  if stripped == "volumes:":
+                      in_volumes_block = True
+                      continue
+                  if in_volumes_block:
+                      if not stripped.startswith("- "):
+                          in_volumes_block = False
+                          continue
+                      entry = stripped[2:]
+                      # Only repo-relative bind mounts (./..., ../...)
+                      # are checked here — absolute host paths like
+                      # /var/log/auth.log, /run/docker.sock, or
+                      # /var/lib/docker (used by fail2ban, promtail, and
+                      # cadvisor respectively) are legitimately expected
+                      # to exist only on the real deployment host, never
+                      # in this repo or in a CI runner, and checking
+                      # those would produce exactly the false positives
+                      # this step's own local dry-run caught before this
+                      # exclusion was added — confirmed by actually
+                      # running the checker against this repo's current
+                      # state, not assumed from reading the compose
+                      # files alone. A named volume reference (e.g.
+                      # "postgres_data:/var/...", no leading . or /) is
+                      # correctly skipped by the same regex.
+                      if not re.match(r"^\.\.?/", entry):
+                          continue
+                      source = entry.split(":")[0]
+                      resolved = (stack_dir / source).resolve()
+                      if not resolved.exists():
+                          missing.append(f"{compose_file}: {source} -> {resolved} (does not exist)")
+
+          if missing:
+              print("The following bind-mount source paths do not exist on disk:")
+              for m in missing:
+                  print(f"  {m}")
+              sys.exit(1)
+          print("All bind-mount source paths exist.")
+          EOF
+
       - name: Validate shell scripts
         run: |
           echo "Validating shell scripts..."

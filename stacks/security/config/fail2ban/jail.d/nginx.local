@@ -1,0 +1,44 @@
+# fail2ban jail definitions for the nginx service in this stack.
+#
+# Uses fail2ban's own bundled filters (nginx-http-auth, nginx-botsearch,
+# nginx-limit-req) — these ship with fail2ban itself under
+# /etc/fail2ban/filter.d/ in the crazymax/fail2ban image, confirmed
+# against fail2ban's own upstream repository before referencing them here
+# rather than assumed to exist. No custom filter.d files are needed.
+#
+# logpath points at /var/log/nginx/error.log, matching this stack's
+# ./config/nginx.conf's `error_log /var/log/nginx/error.log warn;`
+# directive — the fail2ban container mounts the same nginx_logs volume
+# read-only (see docker-compose.yml), so this path resolves correctly
+# inside the fail2ban container too.
+
+[nginx-http-auth]
+# Repeated HTTP basic-auth failures — relevant if you add auth_basic to
+# any location in conf.d/app.conf.
+enabled  = true
+filter   = nginx-http-auth
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+
+[nginx-botsearch]
+# Requests probing for common vulnerable paths (wp-login.php, .env, etc.)
+# that don't exist on this server.
+enabled  = true
+filter   = nginx-botsearch
+logpath  = /var/log/nginx/error.log
+maxretry = 2
+findtime = 10m
+bantime  = 24h
+
+[nginx-limit-req]
+# IPs that repeatedly hit this stack's own nginx.conf rate-limit zones
+# (api/general, defined in ../nginx.conf) hard enough to get rejected by
+# nginx itself, not just slowed down.
+enabled  = true
+filter   = nginx-limit-req
+logpath  = /var/log/nginx/error.log
+maxretry = 10
+findtime = 1m
+bantime  = 1h
