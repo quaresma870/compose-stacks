@@ -315,6 +315,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Write a real log line to nginx's log file (without booting nginx itself)
+        # Done before promtail even starts, deliberately: a file that already
+        # exists and is stable when promtail's file-target-manager first
+        # globs the directory goes through the same cold-start "seek from
+        # offset 0" path syslog/auth.log already use successfully. Writing it
+        # concurrently with promtail's own startup was observed to hit a
+        # tailer-open race against this specific volume ("failed to start
+        # tailer" / lstat on a pipe fd) — an environment/library quirk, not a
+        # config problem, and avoiding the race is simpler than chasing it.
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint sh nginx -c \
+            'echo "127.0.0.1 - - [21/Jul/2026:00:00:00 +0000] \"GET /ci-smoke-test HTTP/1.1\" 200 12 \"-\" \"ci-smoke-test-ua\" \"-\"" >> /var/log/nginx/access.log'
+
       - name: Boot loki, then promtail
         run: |
           docker compose -f docker-compose.yml up -d loki
@@ -326,11 +339,6 @@ jobs:
             ELAPSED=$((ELAPSED + 3))
           done
           docker compose -f docker-compose.yml up -d promtail
-
-      - name: Write a real log line to nginx's log file (without booting nginx itself)
-        run: |
-          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint sh nginx -c \
-            'echo "127.0.0.1 - - [21/Jul/2026:00:00:00 +0000] \"GET /ci-smoke-test HTTP/1.1\" 200 12 \"-\" \"ci-smoke-test-ua\" \"-\"" >> /var/log/nginx/access.log'
 
       - name: Verify Promtail shipped it and it actually reached Loki
         run: |
