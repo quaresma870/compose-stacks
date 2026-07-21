@@ -3,6 +3,30 @@
 All notable changes to this project are documented here. See the
 [README](README.md) for current features and usage.
 
+### v1.3.0
+- fix: **`full-stack`'s nginx logs now actually reach Loki** — closes #16. The Docker `loki` logging
+  driver runs on the host daemon, not inside any container's network namespace, so its
+  `http://localhost:3100/...` URL could never reach the `loki` container (which doesn't even publish
+  port 3100 to the host). Reverted nginx to `json-file` (matching every other stack) — the standard
+  nginx image's `access_log`/`error_log` already point at its own `/dev/stdout`/`/dev/stderr`, so once
+  `json-file` is capturing that output again, Promtail's existing `docker_sd_configs` job already
+  ships it, the same way it already does for every other container in the stack. No further wiring
+  needed once the driver itself was fixed.
+- fix: **`ssl_alerts.yml`'s alert rules were permanently inert** — closes #15. Both rules queried
+  `probe_ssl_earliest_cert_expiry`, a metric only `blackbox_exporter` produces, and no stack shipped
+  that exporter. Added a real `blackbox-exporter` service (`monitoring` and `full-stack`) probing a
+  configurable HTTPS target, wired into `prometheus.yml`'s scrape config, and re-added the
+  `ssl_alerts.yml` rule_files reference to `full-stack` (previously dropped specifically because
+  nothing produced the metric there either — now it does). Verified for real on CI: probes a real
+  HTTPS domain and confirms `probe_ssl_earliest_cert_expiry` comes back as a real, positive value,
+  both directly from the exporter and via Prometheus's own scrape.
+- fix: **`loki` couldn't actually start in either `logging` or `full-stack`** — found by the new
+  CI job for #16 actually booting it for real, rather than just `config --quiet`. Loki 3.x rejects
+  `compactor.retention_enabled: true` unless `compactor.delete_request_store` is also set; both
+  stacks' `loki.yml` had the former without the latter, so the container has never come up as
+  committed. Added `delete_request_store: filesystem`, matching the `filesystem` object store
+  already configured under `common.storage`.
+
 ### v1.2.0
 - fix: **`security` and `full-stack` stacks' missing `./config/` files** — both stacks'
   `docker-compose.yml` referenced config files that didn't exist anywhere in the repo, making both

@@ -151,6 +151,33 @@ services:
       driver: json-file
       options: { max-size: "5m", max-file: "3" }
 
+  # ── Blackbox Exporter (probes HTTPS targets, feeds ssl_alerts.yml) ─────────
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.10"
+        reservations:
+          memory: 32m
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    volumes:
+      - ./config/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9115/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+
 volumes:
   prometheus_data:
   grafana_data:

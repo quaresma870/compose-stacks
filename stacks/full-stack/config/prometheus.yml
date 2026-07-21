@@ -6,6 +6,7 @@ global:
 
 rule_files:
   - /etc/prometheus/alerts.yml
+  - /etc/prometheus/ssl_alerts.yml
 
 alerting:
   alertmanagers:
@@ -24,6 +25,24 @@ scrape_configs:
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
+
+  # SSL certificate expiry probing — feeds ssl_alerts.yml's
+  # probe_ssl_earliest_cert_expiry rules. Replace the target below with
+  # your own domain(s); add more entries to the list to probe several.
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://example.com   # replace with your domain(s)
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
 
   # Add your app metrics endpoint here:
   # - job_name: app
