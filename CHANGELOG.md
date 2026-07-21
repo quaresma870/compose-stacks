@@ -22,6 +22,12 @@ All notable changes to this project are documented here. See the
   nothing produced the metric there either — now it does). Verified for real on CI: probes a real
   HTTPS domain and confirms `probe_ssl_earliest_cert_expiry` comes back as a real, positive value,
   both directly from the exporter and via Prometheus's own scrape.
+- fix: **`loki` couldn't actually start in either `logging` or `full-stack`** — found by the new
+  CI job for #16 actually booting it for real, rather than just `config --quiet`. Loki 3.x rejects
+  `compactor.retention_enabled: true` unless `compactor.delete_request_store` is also set; both
+  stacks' `loki.yml` had the former without the latter, so the container has never come up as
+  committed. Added `delete_request_store: filesystem`, matching the `filesystem` object store
+  already configured under `common.storage`.
 
 ### v1.2.0
 - fix: **`security` and `full-stack` stacks' missing `./config/` files** — both stacks'
