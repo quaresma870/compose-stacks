@@ -334,11 +334,19 @@ jobs:
 
       - name: Verify Promtail shipped it and it actually reached Loki
         run: |
-          MAX_WAIT=60
+          MAX_WAIT=90
           ELAPSED=0
           while true; do
+            # Explicit start/end (nanoseconds since epoch) rather than
+            # relying on query_range's implicit default window — omitting
+            # them was observed to make Loki's query-frontend split the
+            # request into sub-queries that intermittently come back
+            # status=500, unrelated to whether Promtail actually shipped
+            # anything.
+            END_NS=$(($(date +%s) * 1000000000))
+            START_NS=$((END_NS - 600 * 1000000000))
             RESULT=$(docker compose -f docker-compose.yml exec -T loki \
-              wget -qO- 'http://localhost:3100/loki/api/v1/query_range?query={job="nginx"}&limit=10' || true)
+              wget -qO- "http://localhost:3100/loki/api/v1/query_range?query={job=\"nginx\"}&start=${START_NS}&end=${END_NS}&limit=10" || true)
             if echo "$RESULT" | grep -q "ci-smoke-test-ua"; then
               echo "nginx log line found in Loki via Promtail's nginx job:"
               echo "$RESULT"
