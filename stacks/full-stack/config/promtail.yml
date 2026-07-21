@@ -25,6 +25,18 @@ scrape_configs:
           job: auth
           __path__: /var/log/auth.log
 
+  # nginx writes access/error logs to files (nginx.conf's access_log/error_log
+  # directives), not stdout/stderr, so the "docker" job below — which only
+  # reads each container's json-file driver output — never sees them even
+  # though this container mounts the same nginx_logs volume nginx writes to.
+  # This static job is what actually ships them.
+  - job_name: nginx
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: nginx
+          __path__: /var/log/nginx/*.log
+
   # Docker container logs
   - job_name: docker
     docker_sd_configs:

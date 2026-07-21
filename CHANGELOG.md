@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. See the
 [README](README.md) for current features and usage.
 
+### v1.3.0
+- fix: **`full-stack`'s nginx logs now actually reach Loki** — closes #16. The Docker `loki` logging
+  driver runs on the host daemon, not inside any container's network namespace, so its
+  `http://localhost:3100/...` URL could never reach the `loki` container (which doesn't even publish
+  port 3100 to the host). Reverted nginx to `json-file` (matching every other stack), and found —
+  while confirming logs actually arrive, not just fixing the driver — a second, deeper gap: nginx
+  writes access/error logs to files, not stdout, so Promtail's existing `docker_sd_configs` job (which
+  only reads each container's stdout/stderr) was never going to pick them up either, even though
+  Promtail already bind-mounts the shared `nginx_logs` volume. Added a dedicated Promtail static
+  scrape job for that mount. Verified for real on CI: writes a real log line to the exact file path
+  nginx writes to, confirms Promtail ships it, and confirms it's queryable back out of Loki.
+- fix: **`ssl_alerts.yml`'s alert rules were permanently inert** — closes #15. Both rules queried
+  `probe_ssl_earliest_cert_expiry`, a metric only `blackbox_exporter` produces, and no stack shipped
+  that exporter. Added a real `blackbox-exporter` service (`monitoring` and `full-stack`) probing a
+  configurable HTTPS target, wired into `prometheus.yml`'s scrape config, and re-added the
+  `ssl_alerts.yml` rule_files reference to `full-stack` (previously dropped specifically because
+  nothing produced the metric there either — now it does). Verified for real on CI: probes a real
+  HTTPS domain and confirms `probe_ssl_earliest_cert_expiry` comes back as a real, positive value,
+  both directly from the exporter and via Prometheus's own scrape.
+
 ### v1.2.0
 - fix: **`security` and `full-stack` stacks' missing `./config/` files** — both stacks'
   `docker-compose.yml` referenced config files that didn't exist anywhere in the repo, making both

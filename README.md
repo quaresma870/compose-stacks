@@ -15,7 +15,7 @@ Production-ready Docker Compose stacks. Pick one, copy it, fill in your `.env` a
 |-------|----------|----------|
 | [`web-basic`](stacks/web-basic/) | nginx + app + postgres + redis + certbot | Any web app |
 | [`web-traefik`](stacks/web-traefik/) | traefik + app + postgres + redis | Any web app — auto TLS, label-based routing, no nginx config to maintain |
-| [`monitoring`](stacks/monitoring/) | prometheus + grafana + alertmanager + node-exporter + cadvisor | Metrics & dashboards |
+| [`monitoring`](stacks/monitoring/) | prometheus + grafana + alertmanager + node-exporter + cadvisor + blackbox-exporter | Metrics & dashboards |
 | [`security`](stacks/security/) | nginx + crowdsec + fail2ban + certbot | Hardened reverse proxy |
 | [`logging`](stacks/logging/) | loki + promtail + grafana | Centralised log aggregation |
 | [`full-stack`](stacks/full-stack/) | All of the above combined | Complete production setup |
@@ -94,6 +94,8 @@ Full observability stack:
 - **Alertmanager** — alert routing (Slack/email ready, just add credentials)
 - **Node Exporter** — host CPU, memory, disk, network metrics
 - **cAdvisor** — per-container CPU/memory/network metrics
+- **Blackbox Exporter** — probes your domain over HTTPS, feeding `SSLCertExpiringSoon`/`SSLCertExpired`
+  alerts (edit the target in `config/prometheus.yml`'s `blackbox` job — defaults to a placeholder)
 
 Access Grafana at `http://your-server:3000` (default: admin/change-me).
 
@@ -112,7 +114,10 @@ Lightweight log aggregation (Grafana LGTM stack without Mimir):
 - **Grafana** — log exploration and dashboards (pre-provisioned with Loki datasource)
 
 ### full-stack
-Combines all four stacks into a single `docker-compose.yml`. Includes the Loki Docker log driver so nginx logs flow automatically into Grafana.
+Combines all four stacks into a single `docker-compose.yml`. nginx logs flow into Grafana the same way every other
+container's logs do: Promtail tails them (`json-file` driver + a dedicated Promtail scrape job for nginx's log
+files) and ships them to Loki — no Docker `loki` logging driver involved, since that driver runs on the host
+daemon and can't reach a `loki` container over `localhost`.
 
 ---
 

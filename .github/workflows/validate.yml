@@ -198,3 +198,166 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.yml down -v
+
+
+  smoke-test-blackbox-exporter:
+    name: Boot monitoring's blackbox-exporter for real (closes #15)
+    runs-on: ubuntu-latest
+    needs: validate
+    defaults:
+      run:
+        working-directory: stacks/monitoring
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate secrets
+        run: |
+          mkdir -p secrets
+          openssl rand -hex 16 > secrets/grafana_password.txt
+
+      - name: Configure environment
+        run: cp .env.example .env
+
+      - name: Boot prometheus + blackbox-exporter
+        run: docker compose -f docker-compose.yml up -d prometheus blackbox-exporter
+
+      - name: Wait for prometheus + blackbox-exporter to report healthy
+        run: |
+          MAX_WAIT=120
+          ELAPSED=0
+          while true; do
+            UNHEALTHY=$(docker compose -f docker-compose.yml ps --format json \
+              | python3 - <<'EOF'
+          import json, sys
+          raw = sys.stdin.read().strip()
+          containers = []
+          if raw:
+              try:
+                  data = json.loads(raw)
+                  containers = data if isinstance(data, list) else [data]
+              except json.JSONDecodeError:
+                  containers = [json.loads(l) for l in raw.splitlines() if l.strip()]
+          unhealthy = [c.get("Service", c.get("Name", "?")) for c in containers
+                       if c.get("Health") and c.get("Health") != "healthy"]
+          print(",".join(unhealthy))
+          EOF
+            )
+            if [ -z "$UNHEALTHY" ]; then
+              echo "prometheus + blackbox-exporter healthy."
+              break
+            fi
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Timed out waiting for: $UNHEALTHY"
+              docker compose -f docker-compose.yml ps
+              exit 1
+            fi
+            echo "Waiting on: $UNHEALTHY ... (${ELAPSED}s/${MAX_WAIT}s)"
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+
+      - name: Verify blackbox-exporter actually produces probe_ssl_earliest_cert_expiry
+        # This is exactly the metric issue #15 found nothing in the stack ever
+        # produced — probing the exporter's own /probe endpoint directly (from
+        # inside prometheus's container, over the internal monitoring network,
+        # the same path Prometheus's own scrape uses) proves it's now real,
+        # not just that the service boots.
+        run: |
+          OUTPUT=$(docker compose -f docker-compose.yml exec -T prometheus \
+            wget -qO- "http://blackbox-exporter:9115/probe?target=https://example.com&module=http_2xx")
+          echo "$OUTPUT" | grep -q "^probe_success 1" || { echo "probe did not succeed:"; echo "$OUTPUT"; exit 1; }
+          LINE=$(echo "$OUTPUT" | grep "^probe_ssl_earliest_cert_expiry ")
+          echo "$LINE"
+          VALUE=$(echo "$LINE" | awk '{print $2}')
+          python3 -c "import sys; sys.exit(0 if float('$VALUE') > 0 else 1)" \
+            || { echo "probe_ssl_earliest_cert_expiry is not a real positive value: $VALUE"; exit 1; }
+          echo "probe_ssl_earliest_cert_expiry = $VALUE — real metric, ssl_alerts.yml's rules now have something to evaluate."
+
+      - name: Verify Prometheus itself scrapes the blackbox job (not just the exporter directly)
+        run: |
+          sleep 20
+          RESULT=$(docker compose -f docker-compose.yml exec -T prometheus \
+            wget -qO- 'http://localhost:9090/api/v1/query?query=probe_ssl_earliest_cert_expiry')
+          echo "$RESULT"
+          echo "$RESULT" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          sys.exit(0 if data.get('data', {}).get('result') else 1)
+          " || { echo "Prometheus has not scraped probe_ssl_earliest_cert_expiry via the blackbox job"; exit 1; }
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs --tail=100
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
+
+
+  smoke-test-full-stack-nginx-logs:
+    name: Prove Promtail ships nginx's file-based logs to Loki (closes #16)
+    runs-on: ubuntu-latest
+    needs: validate
+    defaults:
+      run:
+        working-directory: stacks/full-stack
+    # Scoped like smoke-test-web-basic's own nginx exclusion: booting nginx
+    # itself here would additionally require real TLS certs and the full
+    # app/postgres/redis dependency chain, which is genuine further work, not
+    # done here (see that job's own comments for the same reasoning). What
+    # this proves instead: a log line written to the exact file path nginx
+    # writes to (the shared nginx_logs volume, at /var/log/nginx/access.log)
+    # is actually picked up by Promtail's new "nginx" static job and reaches
+    # Loki — the precise mechanism issue #16's fix depends on, and the part
+    # that was silently missing even after switching off the broken loki
+    # logging driver (Promtail already mounted this volume, but no scrape
+    # job ever pointed at it).
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Boot loki, then promtail
+        run: |
+          docker compose -f docker-compose.yml up -d loki
+          MAX_WAIT=60
+          ELAPSED=0
+          until docker compose -f docker-compose.yml exec -T loki wget -qO- http://localhost:3100/ready >/dev/null 2>&1; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then echo "loki never became ready"; docker compose -f docker-compose.yml logs loki; exit 1; fi
+            sleep 3
+            ELAPSED=$((ELAPSED + 3))
+          done
+          docker compose -f docker-compose.yml up -d promtail
+
+      - name: Write a real log line to nginx's log file (without booting nginx itself)
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint sh nginx -c \
+            'echo "127.0.0.1 - - [21/Jul/2026:00:00:00 +0000] \"GET /ci-smoke-test HTTP/1.1\" 200 12 \"-\" \"ci-smoke-test-ua\" \"-\"" >> /var/log/nginx/access.log'
+
+      - name: Verify Promtail shipped it and it actually reached Loki
+        run: |
+          MAX_WAIT=60
+          ELAPSED=0
+          while true; do
+            RESULT=$(docker compose -f docker-compose.yml exec -T loki \
+              wget -qO- 'http://localhost:3100/loki/api/v1/query_range?query={job="nginx"}&limit=10' || true)
+            if echo "$RESULT" | grep -q "ci-smoke-test-ua"; then
+              echo "nginx log line found in Loki via Promtail's nginx job:"
+              echo "$RESULT"
+              break
+            fi
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Log line never reached Loki. Last query result:"
+              echo "$RESULT"
+              docker compose -f docker-compose.yml logs promtail
+              exit 1
+            fi
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs --tail=100 loki promtail
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
