@@ -294,39 +294,25 @@ jobs:
         run: docker compose -f docker-compose.yml down -v
 
 
-  smoke-test-full-stack-nginx-logs:
-    name: Prove Promtail ships nginx's file-based logs to Loki (closes #16)
+  smoke-test-full-stack-docker-log-scraping:
+    name: Prove Promtail's docker job actually ships a container's stdout to Loki (closes #16)
     runs-on: ubuntu-latest
     needs: validate
     defaults:
       run:
         working-directory: stacks/full-stack
-    # Scoped like smoke-test-web-basic's own nginx exclusion: booting nginx
-    # itself here would additionally require real TLS certs and the full
-    # app/postgres/redis dependency chain, which is genuine further work, not
-    # done here (see that job's own comments for the same reasoning). What
-    # this proves instead: a log line written to the exact file path nginx
-    # writes to (the shared nginx_logs volume, at /var/log/nginx/access.log)
-    # is actually picked up by Promtail's new "nginx" static job and reaches
-    # Loki — the precise mechanism issue #16's fix depends on, and the part
-    # that was silently missing even after switching off the broken loki
-    # logging driver (Promtail already mounted this volume, but no scrape
-    # job ever pointed at it).
+    # nginx itself is out of scope here, same reasoning as
+    # smoke-test-web-basic's own nginx exclusion: its config needs real TLS
+    # certs to even start. That's fine — nginx's fix doesn't depend on any
+    # nginx-specific scrape config. The standard nginx image's access_log/
+    # error_log already point at its own /dev/stdout /dev/stderr, so once the
+    # service uses the json-file driver again (this fix), Promtail's existing
+    # "docker" job (docker_sd_configs, already used by every other service in
+    # every stack) picks it up the same way it picks up everything else. This
+    # job proves that exact mechanism for real, using loki's own container
+    # (which logs plenty to stdout) as the subject instead of nginx.
     steps:
       - uses: actions/checkout@v6
-
-      - name: Write a real log line to nginx's log file (without booting nginx itself)
-        # Done before promtail even starts, deliberately: a file that already
-        # exists and is stable when promtail's file-target-manager first
-        # globs the directory goes through the same cold-start "seek from
-        # offset 0" path syslog/auth.log already use successfully. Writing it
-        # concurrently with promtail's own startup was observed to hit a
-        # tailer-open race against this specific volume ("failed to start
-        # tailer" / lstat on a pipe fd) — an environment/library quirk, not a
-        # config problem, and avoiding the race is simpler than chasing it.
-        run: |
-          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint sh nginx -c \
-            'echo "127.0.0.1 - - [21/Jul/2026:00:00:00 +0000] \"GET /ci-smoke-test HTTP/1.1\" 200 12 \"-\" \"ci-smoke-test-ua\" \"-\"" >> /var/log/nginx/access.log'
 
       - name: Boot loki, then promtail
         run: |
@@ -340,28 +326,29 @@ jobs:
           done
           docker compose -f docker-compose.yml up -d promtail
 
-      - name: Verify Promtail shipped it and it actually reached Loki
+      - name: Verify Promtail's docker job shipped loki's own stdout into Loki
         run: |
-          MAX_WAIT=90
+          MAX_WAIT=60
           ELAPSED=0
           while true; do
-            # Explicit start/end (nanoseconds since epoch) rather than
-            # relying on query_range's implicit default window — omitting
-            # them was observed to make Loki's query-frontend split the
-            # request into sub-queries that intermittently come back
-            # status=500, unrelated to whether Promtail actually shipped
-            # anything.
             END_NS=$(($(date +%s) * 1000000000))
             START_NS=$((END_NS - 600 * 1000000000))
             RESULT=$(docker compose -f docker-compose.yml exec -T loki \
-              wget -qO- "http://localhost:3100/loki/api/v1/query_range?query={job=\"nginx\"}&start=${START_NS}&end=${END_NS}&limit=10" || true)
-            if echo "$RESULT" | grep -q "ci-smoke-test-ua"; then
-              echo "nginx log line found in Loki via Promtail's nginx job:"
+              wget -qO- "http://localhost:3100/loki/api/v1/query_range?query={service=\"loki\"}&start=${START_NS}&end=${END_NS}&limit=10" || true)
+            if echo "$RESULT" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except ValueError:
+              sys.exit(1)
+          sys.exit(0 if data.get('data', {}).get('result') else 1)
+          "; then
+              echo "loki's own container stdout found in Loki via Promtail's docker job:"
               echo "$RESULT"
               break
             fi
             if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
-              echo "Log line never reached Loki. Last query result:"
+              echo "Never showed up in Loki. Last query result:"
               echo "$RESULT"
               docker compose -f docker-compose.yml logs promtail
               exit 1

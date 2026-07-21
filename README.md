@@ -115,9 +115,10 @@ Lightweight log aggregation (Grafana LGTM stack without Mimir):
 
 ### full-stack
 Combines all four stacks into a single `docker-compose.yml`. nginx logs flow into Grafana the same way every other
-container's logs do: Promtail tails them (`json-file` driver + a dedicated Promtail scrape job for nginx's log
-files) and ships them to Loki — no Docker `loki` logging driver involved, since that driver runs on the host
-daemon and can't reach a `loki` container over `localhost`.
+container's logs do: nginx's `access_log`/`error_log` point at the standard nginx image's own
+`/dev/stdout`/`/dev/stderr` symlinks, so with the `json-file` driver (not the Docker `loki` driver — that one runs
+on the host daemon and can't reach a `loki` container over `localhost`), Promtail's existing Docker log scraping
+picks them up automatically, same as every other service.
 
 ---
 

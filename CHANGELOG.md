@@ -7,13 +7,11 @@ All notable changes to this project are documented here. See the
 - fix: **`full-stack`'s nginx logs now actually reach Loki** — closes #16. The Docker `loki` logging
   driver runs on the host daemon, not inside any container's network namespace, so its
   `http://localhost:3100/...` URL could never reach the `loki` container (which doesn't even publish
-  port 3100 to the host). Reverted nginx to `json-file` (matching every other stack), and found —
-  while confirming logs actually arrive, not just fixing the driver — a second, deeper gap: nginx
-  writes access/error logs to files, not stdout, so Promtail's existing `docker_sd_configs` job (which
-  only reads each container's stdout/stderr) was never going to pick them up either, even though
-  Promtail already bind-mounts the shared `nginx_logs` volume. Added a dedicated Promtail static
-  scrape job for that mount. Verified for real on CI: writes a real log line to the exact file path
-  nginx writes to, confirms Promtail ships it, and confirms it's queryable back out of Loki.
+  port 3100 to the host). Reverted nginx to `json-file` (matching every other stack) — the standard
+  nginx image's `access_log`/`error_log` already point at its own `/dev/stdout`/`/dev/stderr`, so once
+  `json-file` is capturing that output again, Promtail's existing `docker_sd_configs` job already
+  ships it, the same way it already does for every other container in the stack. No further wiring
+  needed once the driver itself was fixed.
 - fix: **`ssl_alerts.yml`'s alert rules were permanently inert** — closes #15. Both rules queried
   `probe_ssl_earliest_cert_expiry`, a metric only `blackbox_exporter` produces, and no stack shipped
   that exporter. Added a real `blackbox-exporter` service (`monitoring` and `full-stack`) probing a
